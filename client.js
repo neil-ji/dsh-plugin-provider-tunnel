@@ -75,6 +75,18 @@ window.__ModuleLoader__.load({
       ));
       const pickedIn = (group) => group.models.filter(has).length;
 
+      // 卡片内部再按模型 id 的厂商前缀分组（openai/... → openai），
+      // 没有前缀的（zai、opencode-go 的模型）用 provider 名当组名。
+      const vendorsOf = (group) => {
+        const map = new Map();
+        for (const id of group.models) {
+          const vendor = id.includes('/') ? id.slice(0, id.indexOf('/')) : group.provider;
+          if (!map.has(vendor)) map.set(vendor, []);
+          map.get(vendor).push(id);
+        }
+        return [...map].map(([vendor, models]) => ({ vendor, models }));
+      };
+
       const setMany = (ids, on) => {
         setMessage(null);
         setSelected((current) => {
@@ -118,36 +130,51 @@ window.__ModuleLoader__.load({
 
           h('div', { style: { display: 'grid', gap: 8 } },
             h('div', { style: title }, '走 VPN 的模型'),
-            h('div', { style: small }, '勾厂商 = 整组选中；取消个别模型只影响它自己。'),
+            h('div', { style: small }, '展开卡片后可勾选厂商或单个模型；卡片本身只负责收纳。'),
             ...(state?.groups ?? []).map((group) => {
-              const picked = pickedIn(group);
-              const all = picked === group.models.length;
               const open = isOpen(group.provider);
+              const picked = pickedIn(group);
               return h('div', {
                 key: group.provider,
                 style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-2)' },
               },
                 h('div', {
-                  style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', cursor: 'pointer' },
+                  style: { display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', cursor: 'pointer', userSelect: 'none' },
                   onClick: () => toggleOpen(group.provider),
                 },
-                  h('span', { style: { ...muted, width: 12, fontSize: 11, userSelect: 'none' } }, open ? '▾' : '▸'),
-                  h('label', { style: { ...row, fontWeight: 600, flex: 1, margin: 0 }, onClick: (event) => event.stopPropagation() },
-                    h(Check, {
-                      checked: all,
-                      indeterminate: picked > 0 && !all,
-                      onChange: () => setMany(group.models, !all),
-                    }),
-                    `${group.provider}（${picked}/${group.models.length}）`,
-                  ),
+                  h('span', {
+                    style: {
+                      color: 'var(--dsw-alias-label-secondary)', fontSize: 16, lineHeight: '16px',
+                      width: 16, textAlign: 'center', display: 'inline-block',
+                    },
+                  }, open ? '▾' : '▸'),
+                  h('span', { style: { ...text, fontSize: 13, fontWeight: 600, flex: 1 } }, group.provider),
+                  h('span', { style: { ...muted, fontSize: 12 } }, `${picked}/${group.models.length}`),
                 ),
                 open ? h('div', {
-                  style: { display: 'grid', gap: 4, padding: '4px 12px 12px 32px', borderTop: '1px solid var(--dsw-alias-border-l1)' },
+                  style: { display: 'grid', gap: 10, padding: '10px 14px 14px', borderTop: '1px solid var(--dsw-alias-border-l1)' },
                 },
-                  ...group.models.map((id) => h('label', { key: id, style: { ...row, ...small } },
-                    h(Check, { checked: has(id), onChange: () => setMany([id], !has(id)) }),
-                    id,
-                  )),
+                  ...vendorsOf(group).map((vendorGroup) => {
+                    const vendorPicked = vendorGroup.models.filter(has).length;
+                    const vendorAll = vendorPicked === vendorGroup.models.length;
+                    return h('div', { key: vendorGroup.vendor, style: { display: 'grid', gap: 4 } },
+                      h('label', { style: { ...row, fontWeight: 600 } },
+                        h(Check, {
+                          checked: vendorAll,
+                          indeterminate: vendorPicked > 0 && !vendorAll,
+                          onChange: () => setMany(vendorGroup.models, !vendorAll),
+                        }),
+                        vendorGroup.vendor,
+                        h('span', { style: { ...muted, fontSize: 11, fontWeight: 400 } }, `${vendorPicked}/${vendorGroup.models.length}`),
+                      ),
+                      h('div', { style: { display: 'grid', gap: 4, paddingLeft: 24 } },
+                        ...vendorGroup.models.map((id) => h('label', { key: id, style: { ...row, ...small } },
+                          h(Check, { checked: has(id), onChange: () => setMany([id], !has(id)) }),
+                          id,
+                        )),
+                      ),
+                    );
+                  }),
                 ) : null,
               );
             }),
