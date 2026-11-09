@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Provider tunnel",
-    "description": "Routes the models you pick through a local VPN tunnel; everything else stays direct."
+    "title": "Provider channel",
+    "description": "Routes the selected models through a local HTTP proxy; everything else stays direct."
   }
 }

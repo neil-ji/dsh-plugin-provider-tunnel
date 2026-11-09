@@ -1,17 +1,17 @@
 // Provider-scoped tunnel for OpenRouter.
 //
 // Why this plugin exists: dsh-llm-pi-ai has no per-provider `proxy` field, and a
-// process-wide HTTPS_PROXY would pull every provider through the VPN. Instead the
+// process-wide HTTPS_PROXY would pull every provider through the proxy. Instead the
 // `openrouter` route's baseURL points at this loopback forwarder, and the
 // forwarder decides per request:
 //
-//   openai/*, anthropic/*, google/*  -> local VPN HTTP proxy
+//   selected model ids  -> local HTTP proxy
 //   everything else                   -> direct
 //
 // Why curl is the transport: on this machine a Node TLS connection to
-// openrouter.ai through the same VPN lands on a different Cloudflare edge and is
+// openrouter.ai through the same proxy lands on a different Cloudflare edge and is
 // rejected with 403 "not available in your region", while curl through the same
-// VPN proxy succeeds. curl also streams SSE without buffering.
+// same proxy succeeds. curl also streams SSE without buffering.
 //
 // The forwarder lives in the Host process: it starts with the plugin and closes
 // with it, so there is no launchd service and nothing to start by hand.
@@ -21,6 +21,8 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+const DEFAULT_VENDORS = [];
 
 export const name = 'provider-tunnel';
 export const inject = ['llm'];
@@ -32,9 +34,9 @@ try {
   const { default: Schema } = await import('@deepseek-ai/schemastery');
   Config = Schema.object({
     port: Schema.natural().default(8787).description('转发器监听端口；被占用时自动顺延最多 10 个。provider 的 baseURL 必须指向实际端口。'),
-    vpnProxy: Schema.string().default('127.0.0.1:7897').description('VPN 的本地 HTTP 代理，格式 host:port。切换或更新 VPN 后在这里改。'),
-    vpnProviders: Schema.array(Schema.string()).default(DEFAULT_VPN_PROVIDERS).description('必须走 VPN 的厂商前缀，对应模型 id 里 / 之前那段。'),
-    vpnModelIds: Schema.array(Schema.string()).default([]).description('额外点名必须走 VPN 的模型 id，优先级高于厂商前缀。'),
+    proxy: Schema.string().default('127.0.0.1:7897').description('本地 HTTP 代理地址，格式 host:port。'),
+    vendors: Schema.array(Schema.string()).default(DEFAULT_VENDORS).description('可选的厂商前缀回退；仅在 modelIds 为空时生效。'),
+    modelIds: Schema.array(Schema.string()).default([]).description('经本地代理路由的模型 id 列表。'),
     upstream: Schema.string().default('openrouter.ai').description('默认上游主机名（未加 /p/<provider> 前缀时使用）。'),
     upstreams: Schema.dict(Schema.string()).default({ openrouter: 'openrouter.ai' }).description('provider id → 上游主机名；请求路径写成 /p/<provider>/<原路径> 时按它转发。'),
   });
@@ -43,9 +45,8 @@ try {
 export { Config };
 
 const DEFAULTS = {
-  port: 0,
-  vpnProxy: '127.0.0.1:7897',
-  vpnModels: '^(openai|anthropic|google)/',
+  port: 8787,
+  proxy: '127.0.0.1:7897',
   upstream: 'openrouter.ai',
   upstreams: { openrouter: 'openrouter.ai' },
 };
@@ -72,16 +73,16 @@ function modelOf(url, body) {
 
 export function apply(ctx, config = {}) {
   const settings = { ...DEFAULTS, ...config };
-  settings.vpnProxy = String(settings.vpnProxy).replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  settings.proxy = String(settings.proxy).replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const port = Number(settings.port);
-  const vpnProviders = Array.isArray(settings.vpnProviders) ? settings.vpnProviders : DEFAULT_VPN_PROVIDERS;
-  const vpnModelIds = Array.isArray(settings.vpnModelIds) ? settings.vpnModelIds : [];
-  // 选中模型列表是唯一事实来源；vpnProviders 只在旧配置没有模型列表时作为默认值。
-  const needsVpn = (model) => {
+  const vendors = Array.isArray(settings.vendors) ? settings.vendors : DEFAULT_VENDORS;
+  const modelIds = Array.isArray(settings.modelIds) ? settings.modelIds : [];
+  // 选中的模型列表是唯一事实来源；vendors 只在列表为空时作为回退。
+  const needsProxy = (model) => {
     if (!model) return false;
-    if (vpnModelIds.length > 0) return vpnModelIds.includes(model);
+    if (modelIds.length > 0) return modelIds.includes(model);
     const vendor = model.includes('/') ? model.slice(0, model.indexOf('/')) : model;
-    return vpnProviders.includes(vendor);
+    return vendors.includes(vendor);
   };
   const logFile = path.join(os.homedir(), '.dsh', 'provider-tunnel.log');
   const log = (message) => {
@@ -118,7 +119,7 @@ export function apply(ctx, config = {}) {
         return;
       }
       const model = modelOf(routeInfo.path, body);
-      const viaVpn = needsVpn(model);
+      const viaProxy = needsProxy(model);
 
       const args = [
         '-sS', '-N', '--http2', '--suppress-connect-headers',
@@ -127,7 +128,7 @@ export function apply(ctx, config = {}) {
         '-D', '-',
         '-A', 'dsh-provider-tunnel/1.0',
       ];
-      if (viaVpn) args.push('-x', settings.vpnProxy);
+      if (viaProxy) args.push('-x', settings.proxy);
       for (const line of headerLines(req.headers)) args.push('-H', line);
 
       let tempFile = '';
@@ -163,7 +164,7 @@ export function apply(ctx, config = {}) {
         const lines = head.split('\r\n');
         const statusMatch = /^HTTP\/[\d.]+ (\d{3})/.exec(lines[0] ?? '');
         const status = statusMatch ? Number(statusMatch[1]) : 502;
-        const out = { 'x-local-route': viaVpn ? 'vpn' : 'direct' };
+        const out = { 'x-local-route': viaProxy ? 'proxy' : 'direct' };
         for (const line of lines.slice(1)) {
           const colon = line.indexOf(':');
           if (colon === -1) continue;
@@ -175,8 +176,8 @@ export function apply(ctx, config = {}) {
         responded = true;
         res.writeHead(status, out);
         if (rest.length > 0) res.write(rest);
-        lastRoute = `${routeInfo.provider} · ${model || req.method} → ${viaVpn ? 'vpn' : 'direct'} (${status})`;
-        log(`${req.method} ${routeInfo.path} provider=${routeInfo.provider} model=${model || '-'} route=${viaVpn ? 'vpn' : 'direct'} status=${status}`);
+        lastRoute = `${routeInfo.provider} · ${model || req.method} → ${viaProxy ? 'proxy' : 'direct'} (${status})`;
+        log(`${req.method} ${routeInfo.path} provider=${routeInfo.provider} model=${model || '-'} route=${viaProxy ? 'proxy' : 'direct'} status=${status}`);
       });
 
       child.stderr.on('data', (data) => {
@@ -244,31 +245,31 @@ export function apply(ctx, config = {}) {
     server.closeAllConnections?.();
   }));
 
-  // 人类命令：切换 VPN 代理，避免手改 profile。（/vpn 查看，/vpn host:port 设置）
+  // 人类命令：查看或设置渠道代理，避免手改 profile。
   ctx.inject(['commands'], (cmdCtx) => {
     cmdCtx.effect(() => cmdCtx.commands.register({
-      name: 'vpn',
-      description: 'Show or set the OpenRouter tunnel VPN proxy (host:port)',
+      name: 'route',
+      description: 'Show or set the routing proxy used by selected models (host:port)',
       handler: async (invocation) => {
         const raw = String(invocation?.rawInput ?? '').trim();
-        if (raw === '') return { kind: 'success', text: `vpnProxy = ${settings.vpnProxy}（用 /vpn host:port 修改）` };
+        if (raw === '') return { kind: 'success', text: `proxy = ${settings.proxy}（用 /route host:port 修改）` };
         const next = raw.replace(/^https?:\/\//, '').replace(/\/+$/, '');
         if (!/^[^:\s]+:\d+$/.test(next)) return { kind: 'error', text: `格式应为 host:port，收到：${raw}` };
         const editor = ctx.get?.('configEditor');
         const entry = ctx.fiber?.entry;
         if (editor === undefined || entry === undefined) return { kind: 'error', text: '当前 profile 不支持写入配置' };
         try {
-          await editor.edit(entry, (current) => ({ ...current, vpnProxy: next }));
+          await editor.edit(entry, (current) => ({ ...current, proxy: next }));
         } catch (error) {
           return { kind: 'error', text: `写入失败：${error?.message ?? error}` };
         }
-        return { kind: 'success', text: `vpnProxy 已更新为 ${next}，插件重启后生效` };
+        return { kind: 'success', text: `代理地址已更新为 ${next}，插件已重启生效` };
       },
-    }), 'provider-tunnel: /vpn');
+    }), 'provider-tunnel: /route');
   });
 
 
-  // 设置页表单用的两个本机端点：读状态、写 vpnProxy。
+  // 设置页表单用的两个本机端点：读状态、写代理与模型选择。
   // 写操作必须等响应发出去再改配置——改自己的 row 会让本插件重启、连接被切断。
   const readJson = (req) => new Promise((resolve, reject) => {
     const chunks = [];
@@ -299,9 +300,9 @@ export function apply(ctx, config = {}) {
         }
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         res.end(JSON.stringify({
-          vpnProxy: settings.vpnProxy,
-          vpnProviders,
-          vpnModelIds,
+          proxy: settings.proxy,
+          vendors,
+          modelIds,
           upstream: settings.upstream,
           port: actualPort,
           lastRoute,
@@ -313,7 +314,7 @@ export function apply(ctx, config = {}) {
 
     webCtx.effect(() => webCtx.webServer.register({
       kind: 'exact',
-      path: '/provider-tunnel/vpnProxy',
+      path: '/provider-tunnel/proxy',
       handler: async (req, res) => {
         const send = (status, payload) => {
           res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -323,37 +324,33 @@ export function apply(ctx, config = {}) {
         let body;
         try { body = await readJson(req); } catch { return send(400, { ok: false, error: 'invalid JSON' }); }
 
-        const nextProxy = String(body?.vpnProxy ?? settings.vpnProxy).trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
+        const nextProxy = String(body?.proxy ?? settings.proxy).trim().replace(/^https?:\/\//, '').replace(/\/+$/, '');
         if (!/^[^:\s]+:\d+$/.test(nextProxy)) return send(400, { ok: false, error: '代理地址格式应为 host:port' });
-        const nextProviders = Array.isArray(body?.vpnProviders)
-          ? body.vpnProviders.map((item) => String(item).trim()).filter((item) => item.length > 0)
-          : vpnProviders;
-        const nextModelIds = Array.isArray(body?.vpnModelIds)
-          ? body.vpnModelIds.map((item) => String(item).trim()).filter((item) => item.length > 0)
-          : vpnModelIds;
+        const nextModelIds = Array.isArray(body?.modelIds)
+          ? body.modelIds.map((item) => String(item).trim()).filter((item) => item.length > 0)
+          : modelIds;
 
         const editor = ctx.get?.('configEditor');
         const entry = ctx.fiber?.entry;
         if (editor === undefined || entry === undefined) return send(500, { ok: false, error: '当前 profile 不支持写配置' });
-        send(200, { ok: true, vpnProxy: nextProxy, vpnProviders: nextProviders, vpnModelIds: nextModelIds });
+        send(200, { ok: true, proxy: nextProxy, modelIds: nextModelIds });
         setTimeout(() => {
           editor.edit(entry, (current) => ({
             ...current,
-            vpnProxy: nextProxy,
-            vpnProviders: nextProviders,
-            vpnModelIds: nextModelIds,
+            proxy: nextProxy,
+            modelIds: nextModelIds,
           }))
-            .then(() => log(`配置已更新：${nextProxy} · providers=${nextProviders.join(',')} · models=${nextModelIds.length}`))
+            .then(() => log(`渠道配置已更新：${nextProxy} · models=${nextModelIds.length}`))
             .catch((error) => log(`配置写入失败: ${error?.message ?? error}`));
         }, 250);
       },
-    }), 'provider-tunnel: POST /provider-tunnel/vpnProxy');
+    }), 'provider-tunnel: POST /provider-tunnel/proxy');
   });
 
   listening.then(
     (boundPort) => {
       actualPort = boundPort;
-      log(`listening on 127.0.0.1:${boundPort} -> https://${settings.upstream} (vpn: ${vpnProviders.join(',')})`);
+      log(`listening on 127.0.0.1:${boundPort} -> https://${settings.upstream} (models: ${modelIds.length})`);
       if (boundPort !== port) log(`port ${port} was busy; provider baseURL must be http://127.0.0.1:${boundPort}/api/v1`);
     },
     (error) => log(`failed to listen from port ${port}: ${error?.message ?? error}`),

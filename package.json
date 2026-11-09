@@ -2,7 +2,7 @@
   "name": "dsh-plugin-provider-tunnel",
   "version": "0.1.0",
   "type": "module",
-  "description": "DSH plugin: a provider-scoped loopback tunnel that sends only the models you choose through a local VPN, for any provider.",
+  "description": "DSH plugin: a provider-scoped loopback channel that routes selected models through a local HTTP proxy, for any provider.",
   "exports": {
     ".": "./index.js",
     "./locale/*.json": "./locale/*.json",
@@ -37,9 +37,9 @@
     "dsh-plugin",
     "deepseek-harness",
     "proxy",
-    "vpn",
-    "openrouter",
     "routing",
+    "channel",
+    "openrouter",
     "tunnel"
   ],
   "homepage": "https://github.com/neil-ji/dsh-plugin-provider-tunnel#readme",

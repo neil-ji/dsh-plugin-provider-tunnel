@@ -64,15 +64,15 @@ window.__ModuleLoader__.load({
 
       const apply = (body) => {
         setState(body);
-        setProxy(body.vpnProxy ?? '');
+        setProxy(body.proxy ?? '');
         const groups = body.groups ?? [];
-        const ids = Array.isArray(body.vpnModelIds) ? body.vpnModelIds : [];
+        const ids = Array.isArray(body.modelIds) ? body.modelIds : [];
         // 旧配置只有厂商列表时，展开成模型列表再交给界面。
         if (ids.length > 0) {
           setSelected(ids);
           return;
         }
-        const vendors = Array.isArray(body.vpnProviders) ? body.vpnProviders : [];
+        const vendors = Array.isArray(body.vendors) ? body.vendors : [];
         const expanded = groups
           .flatMap((group) => group.models)
           .filter((id) => vendors.some((vendor) => id === vendor || id.startsWith(`${vendor}/`)));
@@ -120,10 +120,10 @@ window.__ModuleLoader__.load({
         setBusy(true);
         setMessage(null);
         try {
-          const response = await fetch('/provider-tunnel/vpnProxy', {
+          const response = await fetch('/provider-tunnel/proxy', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ vpnProxy: proxy, vpnProviders: [], vpnModelIds: selected }),
+            body: JSON.stringify({ proxy, modelIds: selected }),
           });
           const body = await response.json();
           if (!body.ok) setMessage({ kind: 'error', text: body.error ?? '保存失败' });
@@ -141,7 +141,7 @@ window.__ModuleLoader__.load({
 
         h('div', { style: card },
           h('div', { style: { display: 'grid', gap: 6 } },
-            h('div', { style: title }, 'VPN 代理地址'),
+            h('div', { style: title }, '路由代理地址'),
             h('input', {
               style: input, value: proxy, spellCheck: false, placeholder: '127.0.0.1:7897',
               onChange: (event) => { setProxy(event.target.value); setMessage(null); },
@@ -149,8 +149,7 @@ window.__ModuleLoader__.load({
           ),
 
           h('div', { style: { display: 'grid', gap: 8 } },
-            h('div', { style: title }, '走 VPN 的模型'),
-            h('div', { style: small }, '展开卡片后可勾选厂商或单个模型；卡片本身只负责收纳。'),
+            h('div', { style: title }, '经代理路由的模型'),
             ...(state?.groups ?? []).map((group) => {
               const open = isOpen(group.provider);
               const picked = pickedIn(group);
