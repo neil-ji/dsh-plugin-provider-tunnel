@@ -34,6 +34,26 @@ window.__ModuleLoader__.load({
       return h('input', { ref, type: 'checkbox', checked, onChange });
     }
 
+    // 折角箭头用 SVG，不用字符，避免字体差异导致大小/对齐不一致。
+    function Chevron({ open }) {
+      return h('svg', {
+        width: 14, height: 14, viewBox: '0 0 16 16', 'aria-hidden': true,
+        style: {
+          flex: '0 0 auto', display: 'block',
+          color: 'var(--dsw-alias-label-secondary)',
+          transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+          transition: 'transform 120ms ease',
+        },
+      }, h('path', {
+        d: 'M6 3.5 10.5 8 6 12.5',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1.6,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }));
+    }
+
     function Section() {
       const [state, setState] = useState(null);
       const [proxy, setProxy] = useState('');
@@ -142,12 +162,7 @@ window.__ModuleLoader__.load({
                   style: { display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', cursor: 'pointer', userSelect: 'none' },
                   onClick: () => toggleOpen(group.provider),
                 },
-                  h('span', {
-                    style: {
-                      color: 'var(--dsw-alias-label-secondary)', fontSize: 16, lineHeight: '16px',
-                      width: 16, textAlign: 'center', display: 'inline-block',
-                    },
-                  }, open ? '▾' : '▸'),
+                  h(Chevron, { open }),
                   h('span', { style: { ...text, fontSize: 13, fontWeight: 600, flex: 1 } }, group.provider),
                   h('span', { style: { ...muted, fontSize: 12 } }, `${picked}/${group.models.length}`),
                 ),
