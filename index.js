@@ -83,7 +83,7 @@ export function apply(ctx, config = {}) {
     const vendor = model.includes('/') ? model.slice(0, model.indexOf('/')) : model;
     return vpnProviders.includes(vendor);
   };
-  const logFile = path.join(os.homedir(), '.dsh', 'openrouter-proxy.log');
+  const logFile = path.join(os.homedir(), '.dsh', 'provider-tunnel.log');
   const log = (message) => {
     const line = `${new Date().toISOString()} ${message}\n`;
     try { fs.appendFileSync(logFile, line); } catch {}

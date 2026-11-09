@@ -1,4 +1,4 @@
-# dsh-plugin-openrouter-proxy
+# dsh-plugin-provider-tunnel
 
 A DeepSeek Harness (DSH) plugin that puts a **provider-scoped tunnel** in front of model providers, so only the models you choose go through a local VPN (or any HTTP proxy) while everything else stays direct.
 
@@ -11,7 +11,7 @@ A DeepSeek Harness (DSH) plugin that puts a **provider-scoped tunnel** in front 
 - One loopback HTTP forwarder, started and stopped with the plugin (no launchd, no separate daemon).
 - Requests are matched by model id against an explicit allowlist; matches are sent through your local proxy, everything else goes direct.
 - Works for **any provider**, addressed by path: `http://127.0.0.1:<port>/p/<provider>/<original path>` is forwarded to `https://<upstream for that provider>/<original path>`.
-- A settings page (**Settings → OpenRouter tunnel**) lists every provider and model read from your profile, with tri-state checkboxes:
+- A settings page (**Settings → Provider tunnel**) lists every provider and model read from your profile, with tri-state checkboxes:
 
 | Action | Result |
 | --- | --- |
@@ -26,7 +26,7 @@ A DeepSeek Harness (DSH) plugin that puts a **provider-scoped tunnel** in front 
 
 ```bash
 # from a checkout, with the plugin manager available
-plugin_manager install_bundle /absolute/path/to/dsh-plugin-openrouter-proxy
+plugin_manager install_bundle /absolute/path/to/dsh-plugin-provider-tunnel
 ```
 
 Then point the routes you want tunnelled at it.
@@ -51,8 +51,8 @@ providers:
 and add the upstream to the plugin config:
 
 ```yaml
-- id: openrouter-proxy
-  name: '@local/dsh-plugin-openrouter-proxy'
+- id: provider-tunnel
+  name: 'dsh-plugin-provider-tunnel'
   config:
     port: 8787
     vpnProxy: 127.0.0.1:7897
@@ -74,7 +74,7 @@ Requests without a `/p/<provider>` prefix use `upstream` (default `openrouter.ai
 | `vpnProviders` | `[openai, anthropic, google]` | Legacy fallback: vendor prefixes, used only while no explicit model list exists |
 | `vpnModelIds` | `[]` | Explicit models that must use the proxy; this is what the settings page writes |
 
-Responses carry `x-local-route: vpn|direct` for diagnostics, and every request is logged to `~/.dsh/openrouter-proxy.log`.
+Responses carry `x-local-route: vpn|direct` for diagnostics, and every request is logged to `~/.dsh/provider-tunnel.log`.
 
 ## Why curl is the transport
 
