@@ -1,0 +1,45 @@
+{
+  "name": "dsh-plugin-provider-tunnel",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "DSH plugin: a provider-scoped loopback tunnel that sends only the models you choose through a local VPN, for any provider.",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json",
+    "./client": "./client.js"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "license": "MIT",
+  "author": "Neil Ji",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "proxy",
+    "vpn",
+    "openrouter",
+    "routing",
+    "tunnel"
+  ]
+}

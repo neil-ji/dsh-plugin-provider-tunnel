@@ -1,0 +1,14 @@
+# Inserts only this plugin's own row.
+#
+# The forwarder listens on 127.0.0.1:port and is the only thing that talks to the
+# VPN. The `openrouter` route points at it through its own baseURL, which stays in
+# the provider profile: dsh-llm-pi-ai can only mount once, so a route cannot be
+# owned by this bundle.
+- insert:
+    - id: provider-tunnel
+      name: 'dsh-plugin-provider-tunnel'
+      config:
+        port: 8787
+        vpnProxy: 127.0.0.1:7897
+        vpnProviders: [openai, anthropic, google]
+        vpnModelIds: []

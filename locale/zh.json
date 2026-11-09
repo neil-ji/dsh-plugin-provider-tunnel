@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Provider 隧道",
+    "description": "只把选中的模型经本地 VPN 隧道转发，其余模型直连。"
+  }
+}
