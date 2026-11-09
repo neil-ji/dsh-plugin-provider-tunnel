@@ -38,6 +38,7 @@ window.__ModuleLoader__.load({
       const [state, setState] = useState(null);
       const [proxy, setProxy] = useState('');
       const [selected, setSelected] = useState([]);
+      const [expanded, setExpanded] = useState([]);
       const [message, setMessage] = useState(null);
       const [busy, setBusy] = useState(false);
 
@@ -68,6 +69,10 @@ window.__ModuleLoader__.load({
       }, []);
 
       const has = (id) => selected.includes(id);
+      const isOpen = (provider) => expanded.includes(provider);
+      const toggleOpen = (provider) => setExpanded((current) => (
+        current.includes(provider) ? current.filter((item) => item !== provider) : [...current, provider]
+      ));
       const pickedIn = (group) => group.models.filter(has).length;
 
       const setMany = (ids, on) => {
@@ -117,24 +122,33 @@ window.__ModuleLoader__.load({
             ...(state?.groups ?? []).map((group) => {
               const picked = pickedIn(group);
               const all = picked === group.models.length;
+              const open = isOpen(group.provider);
               return h('div', {
                 key: group.provider,
-                style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, padding: '10px 12px', display: 'grid', gap: 6 },
+                style: { border: '1px solid var(--dsw-alias-border-l1)', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-2)' },
               },
-                h('label', { style: { ...row, fontWeight: 600 } },
-                  h(Check, {
-                    checked: all,
-                    indeterminate: picked > 0 && !all,
-                    onChange: () => setMany(group.models, !all),
-                  }),
-                  `${group.provider}（${picked}/${group.models.length}）`,
+                h('div', {
+                  style: { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', cursor: 'pointer' },
+                  onClick: () => toggleOpen(group.provider),
+                },
+                  h('span', { style: { ...muted, width: 12, fontSize: 11, userSelect: 'none' } }, open ? '▾' : '▸'),
+                  h('label', { style: { ...row, fontWeight: 600, flex: 1, margin: 0 }, onClick: (event) => event.stopPropagation() },
+                    h(Check, {
+                      checked: all,
+                      indeterminate: picked > 0 && !all,
+                      onChange: () => setMany(group.models, !all),
+                    }),
+                    `${group.provider}（${picked}/${group.models.length}）`,
+                  ),
                 ),
-                h('div', { style: { display: 'grid', gap: 4, paddingLeft: 22 } },
+                open ? h('div', {
+                  style: { display: 'grid', gap: 4, padding: '4px 12px 12px 32px', borderTop: '1px solid var(--dsw-alias-border-l1)' },
+                },
                   ...group.models.map((id) => h('label', { key: id, style: { ...row, ...small } },
                     h(Check, { checked: has(id), onChange: () => setMany([id], !has(id)) }),
                     id,
                   )),
-                ),
+                ) : null,
               );
             }),
           ),

@@ -41,5 +41,13 @@
     "openrouter",
     "routing",
     "tunnel"
-  ]
+  ],
+  "homepage": "https://github.com/neil-ji/dsh-plugin-provider-tunnel#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neil-ji/dsh-plugin-provider-tunnel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/neil-ji/dsh-plugin-provider-tunnel/issues"
+  }
 }
